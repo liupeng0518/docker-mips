@@ -1,0 +1,100 @@
+apiVersion: v1
+data:
+  mysqld.cnf: |
+    [client]
+    #port = 3306
+    #socket = /var/lib/mysql/mysqld.sock
+    [mysql]
+    no-auto-rehash
+
+    [mysqld]
+    #user = mysql
+    port = 3306
+    #socket = /var/lib/mysql/mysqld.sock
+    datadir = /var/lib/mysql
+
+    [mysqld_safe]
+    #log-error= /var/lib/mysql/mysql_oldboy.err
+    #pid-file = /var/lib/mysql/mysqld.pid
+kind: ConfigMap
+metadata:
+  name: mysql-config
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mysecret
+type: Opaque
+data:
+  username: YWRtaW4=
+  password: MTIzNDU2YT8=
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mariadb102-claim
+  annotations:
+    volume.beta.kubernetes.io/storage-class: "managed-nfs-storage"
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: galera
+spec:
+  type: NodePort
+  ports:
+    - port: 3306
+  selector:
+    app: mariadb102
+
+---
+apiVersion: apps/v1beta1
+kind: Deployment
+metadata:
+  name: mariadb102
+spec:
+  selector:
+    matchLabels:
+      app: mariadb102
+  template:
+    metadata:
+      labels:
+        app: mariadb102
+    spec:
+      containers:
+        - image: 10.7.12.80:9000/mariadb-102-centos7-mips
+          imagePullPolicy: IfNotPresent
+          name: mariadb102
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mysecret
+                  key: password
+          ports:
+            - containerPort: 3306
+              name: mariadb102
+          volumeMounts:
+            - name: mariadb102-config
+              mountPath: /etc/my.cnf.d/mysqld.cnf
+              subPath: mysqld.cnf
+            - name: mysql-persistent-storage
+              mountPath: "/var/lib/mysql/data"
+
+      volumes:
+        - name: mysql-persistent-storage
+          persistentVolumeClaim:
+            claimName: mariadb102-claim
+
+        - name: mariadb102-config
+          configMap:
+            name: mysql-config
+            items:
+              - key: mysqld.cnf
+                path: mysqld.cnf
